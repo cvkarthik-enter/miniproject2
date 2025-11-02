@@ -10,8 +10,54 @@ class RawMaterial:
     def __str__(self):
         return f"{self.name} (Cost: ${self.unit_cost:.2f})"
 
-# --- 2. Product Type Model (The Standardizer) ---
+# --- 2. Raw Material Manager (New Centralized Class) ---
+class RawMaterialManager:
+    """Manages the creation and storage of all RawMaterial objects."""
+    def __init__(self):
+        # {name: RawMaterial_object}
+        self.materials = {}
+
+    def add_material(self, name, cost):
+        """Creates and stores a new RawMaterial."""
+        name = name.strip().title()
+        if name in self.materials:
+            print(f"Error: Raw Material '{name}' already exists.")
+            return False
+        
+        try:
+            cost = float(cost)
+        except ValueError:
+            print("Error: Cost must be a number.")
+            return False
+
+        self.materials[name] = RawMaterial(name, cost)
+        print(f"✅ Raw Material '{name}' added with cost ${cost:.2f}.")
+        return True
+
+    def get_material(self, name):
+        """Retrieves a RawMaterial object by name."""
+        return self.materials.get(name.strip().title())
+
+    def get_all_materials(self):
+        """Returns the dictionary of all materials."""
+        return self.materials
+
+    def view_materials(self):
+        """Prints all currently defined raw materials."""
+        print("\n--- 📦 Available Raw Materials ---")
+        if not self.materials:
+            print("No raw materials have been defined yet.")
+            return
+        for mat in self.materials.values():
+            print(f"  - {mat}")
+        print("-" * 35)
+
+
+# --- 3. Product Type Model (The Standardizer) ---
 class ProductType:
+    # ... (The ProductType class remains the same for simplicity)
+    # ... (Its reliance on the material dictionary is passed during method calls)
+    
     """
     Defines a standardized recipe for a custom product.
     Includes material proportions, pricing logic, and required user variables.
@@ -22,10 +68,8 @@ class ProductType:
         # {RawMaterial_name: proportional_factor} e.g., {"Steel": 2.5, "Plastic": 1.0}
         self.materials_recipe = {}
         # List of variables required from the user when creating a product instance.
-        # e.g., ["length_cm", "width_cm"]
         self.required_variables = []
-        # Function/Lambda to calculate final price based on material cost and user variables
-        # Default: just material cost * 1.5 markup
+        # Default pricing formula: material cost * 1.5 markup
         self.price_formula = lambda material_cost, vars: material_cost * 1.5
 
     def add_material(self, material_name, factor):
@@ -36,10 +80,6 @@ class ProductType:
         """Adds a user-required variable."""
         if variable_name not in self.required_variables:
             self.required_variables.append(variable_name)
-
-    def set_price_formula(self, formula):
-        """Sets a custom pricing formula (a lambda function)."""
-        self.price_formula = formula
 
     def calculate_material_cost(self, all_materials):
         """Calculates the total material cost for a standard unit of this product type."""
@@ -70,8 +110,10 @@ class ProductType:
         return "\n".join(details)
 
 
-# --- 3. Product Instance Model ---
+# --- 4. Product Instance Model ---
 class Product:
+    # ... (The Product class remains the same)
+    
     """Represents an individual manufactured product based on a ProductType."""
     def __init__(self, product_type, user_variables, all_materials):
         self.id = uuid.uuid4()
@@ -80,7 +122,6 @@ class Product:
         self.material_cost = 0
         self.final_price = 0
         
-        # Evaluate cost and price upon creation
         self._evaluate_cost_and_price(all_materials)
 
     def _evaluate_cost_and_price(self, all_materials):
@@ -90,7 +131,6 @@ class Product:
         base_cost = self.product_type.calculate_material_cost(all_materials)
         
         # 2. Apply a scaling factor from user input (example logic)
-        # Assuming the first user variable (e.g., "size_factor") scales the cost.
         scaling_factor = self.user_variables.get(self.product_type.required_variables[0], 1) if self.product_type.required_variables else 1
         
         self.material_cost = base_cost * scaling_factor
@@ -105,21 +145,20 @@ class Product:
                 f"  Material Cost: ${self.material_cost:.2f} | Final Price: ${self.final_price:.2f}")
 
 
-# --- 4. Product Manager (The System Controller) ---
+# --- 5. Product Manager (The System Controller) ---
 class ProductManager:
     """Manages Product Types and Products, handles user interaction."""
     def __init__(self):
-        # Data Storage
-        # {name: ProductType_object}
+        # Composition: ProductManager 'has-a' RawMaterialManager
+        self.material_manager = RawMaterialManager()
         self.product_types = {}
-        # [Product_object]
         self.products = []
-        # {name: RawMaterial_object} - Pre-populated for demonstration
-        self.raw_materials = {
-            "Steel": RawMaterial("Steel", 5.00),
-            "Plastic": RawMaterial("Plastic", 1.50),
-            "Wood": RawMaterial("Wood", 3.00),
-        }
+        
+        # Pre-populate some materials for a quick start
+        self.material_manager.add_material("Steel", 5.00)
+        self.material_manager.add_material("Plastic", 1.50)
+        self.material_manager.add_material("Wood", 3.00)
+
 
     def _get_input(self, prompt, type_cast=str):
         """Helper for robust input."""
@@ -131,6 +170,15 @@ class ProductManager:
                 return type_cast(user_input)
             except ValueError as e:
                 print(f"Invalid input: {e}. Please try again.")
+
+    # --- Raw Material Management Method ---
+    def add_new_raw_material(self):
+        """Prompts user to create a new raw material."""
+        print("\n--- 🧱 Add New Raw Material ---")
+        name = self._get_input("Enter Raw Material Name")
+        cost = self._get_input("Enter Unit Cost (e.g., 5.00)", float)
+        self.material_manager.add_material(name, cost)
+
 
     # --- Product Type Management Methods ---
     def create_new_product_type(self):
@@ -144,28 +192,33 @@ class ProductManager:
 
         new_type = ProductType(name, description)
 
-        print("\n--- Define Recipe & Variables ---")
+        # Accessing materials through the dedicated manager
+        available_materials = self.material_manager.get_all_materials()
+        if not available_materials:
+            print("\n⚠️ No raw materials available. Please add some first (Menu 7).")
+            return
+            
+        print("\n--- Define Recipe (Raw Materials) ---")
+        self.material_manager.view_materials()
         
-        # Raw Materials
-        print("Available Raw Materials: " + ", ".join(self.raw_materials.keys()))
         while self._get_input("Add a Raw Material to the recipe? (yes/no)").lower() == 'yes':
             mat_name = self._get_input("Enter Raw Material Name").title()
-            if mat_name in self.raw_materials:
+            if mat_name in available_materials:
                 factor = self._get_input(f"Enter proportional factor for {mat_name} (e.g., 2.5)", float)
                 new_type.add_material(mat_name, factor)
             else:
-                print(f"Error: Raw Material '{mat_name}' not found.")
+                print(f"Error: Raw Material '{mat_name}' not found in the available list.")
 
-        # Dependent Variables
+        # Dependent Variables (omitted for brevity, same as before)
         print("\n--- Define Dependent Variables ---")
-        print("These variables will be asked for on product creation.")
         while self._get_input("Add a required user variable? (yes/no)").lower() == 'yes':
-            var_name = self._get_input("Enter Variable Name (e.g., 'size_factor', 'color')")
+            var_name = self._get_input("Enter Variable Name (e.g., 'size_factor')")
             new_type.add_variable(var_name.lower().replace(" ", "_"))
 
         self.product_types[name] = new_type
         print(f"\n✅ Product Type '{name}' created successfully!")
     
+    # --- Other Product Type Methods (Modified to use the Manager) ---
     def view_existing_product_types(self):
         """Displays details of all existing ProductTypes."""
         print("\n--- 📝 Existing Product Types ---")
@@ -173,13 +226,15 @@ class ProductManager:
             print("No product types have been defined yet.")
             return
 
+        all_materials = self.material_manager.get_all_materials()
         for name, p_type in self.product_types.items():
             print("-" * 40)
-            print(p_type.get_details(self.raw_materials))
+            # Pass the material list from the manager
+            print(p_type.get_details(all_materials))
         print("-" * 40)
 
     def modify_existing_product_type(self):
-        """Simple modification option (can be expanded)."""
+        """Simple modification option."""
         print("\n--- 🔧 Modify Existing Product Type ---")
         if not self.product_types:
             print("No product types to modify.")
@@ -198,13 +253,14 @@ class ProductManager:
         choice = self._get_input("Enter choice (1 or 2)", int)
 
         if choice == 1:
+            self.material_manager.view_materials()
             mat_name = self._get_input("Enter Raw Material Name").title()
-            if mat_name in self.raw_materials:
+            if mat_name in self.material_manager.get_all_materials():
                 factor = self._get_input(f"Enter NEW proportional factor for {mat_name}", float)
                 p_type.add_material(mat_name, factor)
                 print(f"✅ Recipe updated for {name}.")
             else:
-                print(f"Error: Raw Material '{mat_name}' not found.")
+                print(f"Error: Raw Material '{mat_name}' not found in the available list.")
         elif choice == 2:
             var_name = self._get_input("Enter NEW Variable Name").lower().replace(" ", "_")
             p_type.add_variable(var_name)
@@ -212,9 +268,11 @@ class ProductManager:
         else:
             print("Invalid choice.")
             
-    # --- Product Creation Method ---
+    # --- Product Creation Method (Modified to use the Manager) ---
     def create_product_instance(self):
         """Creates an actual product instance based on a selected ProductType."""
+        # ... (same selection logic)
+        
         print("\n--- 📦 Create New Product Instance ---")
         if not self.product_types:
             print("Cannot create product: No product types defined.")
@@ -233,33 +291,36 @@ class ProductManager:
         user_vars = {}
         for var_name in p_type.required_variables:
             value = self._get_input(f"Enter value for dependent variable '{var_name}'")
-            # Simple attempt to cast to float if it looks like a number
             try:
                 user_vars[var_name] = float(value)
             except ValueError:
                 user_vars[var_name] = value
 
-        new_product = Product(p_type, user_vars, self.raw_materials)
+        # Pass the material list from the manager
+        new_product = Product(p_type, user_vars, self.material_manager.get_all_materials())
         self.products.append(new_product)
         print("\n✅ Product created:")
         print(new_product)
 
-    # --- Main Application Loop ---
+    # --- Main Application Loop (Updated Menu) ---
     def run(self):
         """The main command-line interface loop."""
         print("--- Custom Manufacturing Product System ---")
         while True:
-            print("\n" + "="*30)
+            print("\n" + "="*40)
             print("Main Menu:")
             print("1. Create New Product Type")
             print("2. View Existing Product Types")
             print("3. Modify Existing Product Type")
             print("4. Create New Product (Instance)")
             print("5. View All Products")
-            print("6. Exit")
-            print("="*30)
+            print("--- Raw Material Management ---")
+            print("6. **VIEW** Available Raw Materials")
+            print("7. **CREATE** New Raw Material")
+            print("8. Exit")
+            print("="*40)
 
-            choice = self._get_input("Enter your choice (1-6)", str)
+            choice = self._get_input("Enter your choice (1-8)", str)
             
             if choice == '1':
                 self.create_new_product_type()
@@ -278,10 +339,14 @@ class ProductManager:
                     print(product)
                 print("-" * 40)
             elif choice == '6':
+                self.material_manager.view_materials()
+            elif choice == '7':
+                self.add_new_raw_material()
+            elif choice == '8':
                 print("Thank you for using the system. Goodbye!")
                 break
             else:
-                print("Invalid choice. Please enter a number between 1 and 6.")
+                print("Invalid choice. Please enter a number between 1 and 8.")
 
 
 # --- Execution ---
